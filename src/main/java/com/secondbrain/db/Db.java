@@ -41,7 +41,10 @@ public final class Db {
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS pub_id VARCHAR(16)",
             "UPDATE users SET pub_id = " + Db.NEW_PUB_ID + " WHERE pub_id IS NULL",
-            "CREATE UNIQUE INDEX IF NOT EXISTS users_pub_id ON users(pub_id)"
+            "CREATE UNIQUE INDEX IF NOT EXISTS users_pub_id ON users(pub_id)",
+            // v3: thời điểm hoàn thành — dùng cho thống kê tuần, chuỗi ngày và hoạt động gần đây
+            "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_at TIMESTAMP",
+            "UPDATE tasks SET done_at = created_at WHERE done AND done_at IS NULL"
     };
 
     private static JdbcConnectionPool pool;

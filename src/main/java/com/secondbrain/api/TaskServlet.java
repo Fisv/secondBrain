@@ -12,14 +12,19 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Time;
+import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * GET    /api/tasks?view=today|upcoming|inbox|search|project|member[&q=..][&projectId=..][&memberId=..]
  * GET    /api/tasks/counts  — số mục tiêu chưa xong của Hôm nay và Hộp thư
+ * GET    /api/tasks/stats   — số liệu bảng điều khiển (hôm nay, tuần, chuỗi ngày, gần đây)
  * POST   /api/tasks         — {title, projectId?, dueDate?, dueTime?, priority?}
  * PATCH  /api/tasks/{id}    — cập nhật một hoặc nhiều trường ở trên, hoặc {done}
  * DELETE /api/tasks/{id}
@@ -47,6 +52,9 @@ public class TaskServlet extends ApiServlet {
             }
             if (r.is("GET", 1) && r.path[0].equals("counts")) {
                 return counts(c, r.userId);
+            }
+            if (r.is("GET", 1) && r.path[0].equals("stats")) {
+                return stats(c, r.userId);
             }
             if (r.is("POST", 0)) {
                 return create(c, r);
@@ -128,6 +136,62 @@ public class TaskServlet extends ApiServlet {
         }
     }
 
+    /** Số liệu cho bảng điều khiển: tiến độ hôm nay, tuần này, chuỗi ngày và hoạt động gần đây. */
+    private Map<String, Object> stats(Connection c, String uid) throws SQLException {
+        Map<String, Object> out = new LinkedHashMap<>();
+        String sql = "SELECT"
+                + " COUNT(CASE WHEN " + TODAY + " THEN 1 END),"
+                + " COUNT(CASE WHEN " + TODAY + " AND t.done THEN 1 END),"
+                + " COUNT(CASE WHEN t.done AND t.done_at >= DATEADD('DAY', -6, CURRENT_DATE) THEN 1 END),"
+                + " COUNT(CASE WHEN NOT t.done THEN 1 END),"
+                + " COUNT(CASE WHEN NOT t.done AND t.due_date < CURRENT_DATE THEN 1 END)"
+                + " FROM tasks t WHERE t.owner_id = ?";
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, uid);
+            ResultSet rs = ps.executeQuery();
+            rs.next();
+            out.put("todayTotal", rs.getInt(1));
+            out.put("todayDone", rs.getInt(2));
+            out.put("weekDone", rs.getInt(3));
+            out.put("open", rs.getInt(4));
+            out.put("overdue", rs.getInt(5));
+        }
+
+        // Chuỗi ngày liên tiếp có hoàn thành ít nhất một mục tiêu (tính đến hôm nay hoặc hôm qua).
+        Set<LocalDate> days = new HashSet<>();
+        try (PreparedStatement ps = c.prepareStatement("SELECT DISTINCT CAST(done_at AS DATE) FROM tasks"
+                + " WHERE owner_id = ? AND done AND done_at >= DATEADD('DAY', -366, CURRENT_DATE)")) {
+            ps.setString(1, uid);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                days.add(rs.getDate(1).toLocalDate());
+            }
+        }
+        LocalDate d = LocalDate.now();
+        if (!days.contains(d)) {
+            d = d.minusDays(1);
+        }
+        int streak = 0;
+        while (days.contains(d)) {
+            streak++;
+            d = d.minusDays(1);
+        }
+        out.put("streak", streak);
+
+        List<Map<String, Object>> recent = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(SELECT
+                + " ORDER BY COALESCE(t.done_at, t.created_at) DESC, t.id DESC LIMIT 6")) {
+            ps.setString(1, uid);
+            ps.setString(2, uid);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                recent.add(toJson(rs, uid));
+            }
+        }
+        out.put("recent", recent);
+        return out;
+    }
+
     private Map<String, Object> create(Connection c, Request r) throws Exception {
         JsonObject b = r.body();
         String title = validTitle(r.str("title"));
@@ -163,8 +227,10 @@ public class TaskServlet extends ApiServlet {
             params.add(validTitle(r.str("title")));
         }
         if (b.has("done")) {
+            boolean done = b.get("done").getAsBoolean();
             sets.add("done = ?");
-            params.add(b.get("done").getAsBoolean());
+            params.add(done);
+            sets.add(done ? "done_at = CURRENT_TIMESTAMP" : "done_at = NULL");
         }
         if (b.has("dueDate")) {
             sets.add("due_date = ?");
@@ -234,6 +300,10 @@ public class TaskServlet extends ApiServlet {
         t.put("ownerId", rs.getString("owner_pub"));
         t.put("ownerName", rs.getString("owner_name"));
         t.put("mine", uid.equals(rs.getString("owner_id")));
+        Timestamp created = rs.getTimestamp("created_at");
+        t.put("createdAt", created == null ? null : created.toLocalDateTime().toString());
+        Timestamp doneAt = rs.getTimestamp("done_at");
+        t.put("doneAt", doneAt == null ? null : doneAt.toLocalDateTime().toString());
         return t;
     }
 

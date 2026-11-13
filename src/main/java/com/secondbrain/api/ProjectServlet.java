@@ -67,7 +67,8 @@ public class ProjectServlet extends ApiServlet {
     }
 
     private List<Map<String, Object>> list(Connection c, String uid) throws SQLException {
-        String sql = "SELECT p.*, (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND NOT t.done) AS open_count"
+        String sql = "SELECT p.*, (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND NOT t.done) AS open_count,"
+                + " (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.done) AS done_count"
                 + " FROM projects p JOIN project_members m ON m.project_id = p.id"
                 + " WHERE m.user_id = ? ORDER BY p.created_at, p.id";
         List<Map<String, Object>> out = new ArrayList<>();
@@ -82,7 +83,8 @@ public class ProjectServlet extends ApiServlet {
     }
 
     private Map<String, Object> get(Connection c, String uid, long id) throws SQLException {
-        String sql = "SELECT p.*, (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND NOT t.done) AS open_count"
+        String sql = "SELECT p.*, (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND NOT t.done) AS open_count,"
+                + " (SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.done) AS done_count"
                 + " FROM projects p WHERE p.id = ?";
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setLong(1, id);
@@ -103,6 +105,7 @@ public class ProjectServlet extends ApiServlet {
         p.put("shareKey", rs.getString("share_key"));
         p.put("isOwner", uid.equals(rs.getString("owner_id")));
         p.put("openCount", rs.getInt("open_count"));
+        p.put("doneCount", rs.getInt("done_count"));
         // Thành viên: chính mình đứng đầu, kèm số mục tiêu mỗi người tạo trong dự án.
         List<Map<String, Object>> members = new ArrayList<>();
         try (PreparedStatement ps = c.prepareStatement(

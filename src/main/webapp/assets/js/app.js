@@ -11,7 +11,7 @@ async function api(method, path, body) {
 }
 
 // ---------- State ----------
-const state = { me: null, projects: [], partners: [], tasks: [], counts: {}, query: '' };
+const state = { me: null, projects: [], partners: [], tasks: [], counts: {}, stats: null, query: '', closed: {} };
 // view: 'today' | 'inbox' | 'upcoming' | 'search' | 'labels' | 'p<projectId>' | 'u:<memberId>'
 let view = 'today';
 
@@ -19,7 +19,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initial = (name) => (name || '?').trim().charAt(0).toUpperCase();
-const memberColors = ['#c0663a', '#4c8df6', '#3fb36b', '#a970ff', '#e8a33d'];
+const memberColors = ['#3b5bfd', '#f08a24', '#22a35a', '#7c5cff', '#e5484d', '#0ea5b7'];
 const colorOf = (name) => memberColors[[...(name || '')].reduce((a, c) => a + c.charCodeAt(0), 0) % memberColors.length];
 const projectById = (id) => state.projects.find((p) => p.id === id);
 const partnerById = (id) => state.partners.find((p) => p.id === id);
@@ -117,8 +117,8 @@ async function loadTasks() {
 async function refresh() {
     try {
         let partners;
-        [state.projects, state.counts, partners] = await Promise.all(
-            [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence')]);
+        [state.projects, state.counts, partners, state.stats] = await Promise.all(
+            [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence'), api('GET', 'tasks/stats')]);
         applyPartners(partners);
         if ((view.startsWith('p') && !currentProject()) || (view.startsWith('u:') && !currentMember())) view = 'today';
         await loadTasks();
@@ -128,31 +128,108 @@ async function refresh() {
     }
 }
 
+async function go(v) {
+    view = v;
+    if (view !== 'search') {
+        state.query = '';
+        $('#sideSearch').value = '';
+    }
+    if (window.innerWidth <= 760) $('#app').classList.add('collapsed');
+    await loadTasks();
+    render();
+    $('.main').scrollTop = 0;
+}
+
+// ---------- Icons ----------
+const ICON = {
+    clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></svg>',
+    cal: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
+    folder: '<svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24"><path d="M4 13l2.5-7.5h11L20 13v5.5H4z"/><path d="M4 13h5l1 2h4l1-2h5"/></svg>',
+    flag: '<svg viewBox="0 0 24 24"><path d="M6 21V4M6 4h11l-2 4 2 4H6"/></svg>',
+    check: '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+    plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+    arrow: '<svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>',
+    chev: '<svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg>',
+    trash: '<svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
+    target: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6"/></svg>',
+    bolt: '<svg viewBox="0 0 24 24"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>',
+    fire: '<svg viewBox="0 0 24 24"><path d="M12 21c-3.9 0-6.5-2.6-6.5-6.2 0-3.3 2.4-5.4 3.6-8.3.5 1.8 1.6 2.9 2.7 3.4.2-2.6 1.4-4.9 3.4-6.4-.3 3 2.8 5.6 2.8 9.6 0 4.2-2.6 7.9-6 7.9z"/></svg>',
+    users: '<svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.2"/><path d="M3.5 19c.6-3 2.9-4.8 5.5-4.8s4.9 1.8 5.5 4.8"/><circle cx="17" cy="8.5" r="2.6"/><path d="M16 13.6c2.3-.2 4.1 1.3 4.6 4"/></svg>',
+    key: '<svg viewBox="0 0 24 24"><circle cx="8" cy="12" r="3.5"/><path d="M11.5 12H20M17 12v3M20 12v2"/></svg>'
+};
+const PRIORITY = {
+    1: { label: 'Khẩn cấp', cls: 'p1' },
+    2: { label: 'Quan trọng', cls: 'p2' },
+    3: { label: 'Nên làm', cls: 'p3' },
+    4: { label: 'Bình thường', cls: '' }
+};
+
+// ---------- Helpers cho dashboard ----------
+const isOverdue = (t) => !t.done && t.dueDate && t.dueDate < todayIso();
+const projectTag = (t) => {
+    const p = projectById(t.projectId);
+    return p ? `<span class="tag-dot" style="--c:${esc(p.color)}">${esc(p.name)}</span>`
+        : '<span class="tag-dot">Hộp thư</span>';
+};
+
+function shortDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso.length > 10 ? iso : iso + 'T00:00');
+    return d.toLocaleDateString('vi-VN', { day: 'numeric', month: 'short' });
+}
+
+function greeting() {
+    const h = new Date().getHours();
+    return h < 11 ? 'Chào buổi sáng' : h < 13 ? 'Chào buổi trưa' : h < 18 ? 'Chào buổi chiều' : 'Chào buổi tối';
+}
+
+/** Mục tiêu nên làm tiếp: quá hạn trước, rồi theo ưu tiên, rồi theo giờ. */
+function pickNext(tasks) {
+    return tasks.filter((t) => !t.done && t.mine).sort((a, b) =>
+        (isOverdue(b) - isOverdue(a)) || (a.priority - b.priority)
+        || String(a.dueTime || '99').localeCompare(String(b.dueTime || '99')) || a.id - b.id)[0];
+}
+
+function ring(pct, color) {
+    const r = 15, c = 2 * Math.PI * r;
+    return `<svg class="ring" viewBox="0 0 38 38"><circle class="bg" cx="19" cy="19" r="${r}"/>`
+        + `<circle cx="19" cy="19" r="${r}" stroke="${color}" stroke-linecap="round" stroke-dasharray="${(pct / 100) * c} ${c}"/></svg>`;
+}
+
 // ---------- Render ----------
-function render() { renderSidebar(); renderMain(); }
+function render() { renderSidebar(); renderHeader(); renderMain(); renderSide(); }
 
 function renderSidebar() {
     $('#userName').textContent = state.me?.name ?? '';
     $('#userAvatar').textContent = initial(state.me?.name);
+    $('#userAvatar').style.background = colorOf(state.me?.name);
+    $('#brandSub').textContent = `${state.projects.length} dự án · ${state.stats?.open ?? 0} đang mở`;
 
     const item = (p) => `
         <a class="nav-item" data-view="p${p.id}">
-            <span class="hash" style="color:${esc(p.color)}">#</span>
+            <span class="hash" style="background:${esc(p.color)}"></span>
             <span class="ellipsis">${esc(p.name)}</span>
             <span class="count">${p.shareKey ? p.members.length + ' 👥' : p.openCount || ''}</span>
         </a>`;
     const mine = state.projects.filter((p) => !p.shareKey);
     const shared = state.projects.filter((p) => p.shareKey);
     $('#projects').innerHTML = mine.map(item).join('') || '<div class="side-empty">Chưa có dự án</div>';
-    $('#shared').innerHTML = shared.map(item).join('');
+    $('#shared').innerHTML = shared.map(item).join('') || '<div class="side-empty">Chưa tham gia dự án chung</div>';
     renderPartners();
 
     $('[data-count="today"]').textContent = state.counts.today || '';
     $('[data-count="inbox"]').textContent = state.counts.inbox || '';
+
+    const s = state.stats || {};
+    const pct = s.todayTotal ? Math.round((s.todayDone / s.todayTotal) * 100) : 0;
+    $('#goalCard').innerHTML = `
+        <div class="goal-title">${ICON.target} Hoàn thành mục tiêu hôm nay</div>
+        <div class="bar"><span style="width:${pct}%"></span></div>
+        <div class="goal-foot"><span>${s.todayDone ?? 0} / ${s.todayTotal ?? 0} mục tiêu</span><span>${pct}%</span></div>`;
 }
 
 function renderPartners() {
-    // Người online lên đầu.
     const list = [...state.partners].sort((a, b) => b.online - a.online);
     $('#partners').innerHTML = list.map((p) => `
         <a class="nav-item partner" data-view="u:${esc(p.id)}">
@@ -169,117 +246,321 @@ function renderPartners() {
         el.classList.toggle('active', el.dataset.view === view));
 }
 
-function taskHtml(t, opts = {}) {
-    const p = projectById(t.projectId);
-    let date = '';
-    if (t.dueDate) {
-        const cls = t.dueDate < todayIso() && !t.done ? 'overdue' : t.dueDate === todayIso() ? 'today' : '';
-        const label = view === 'today' && t.dueDate === todayIso() ? '' : dateLabel(t.dueDate);
-        date = `<span class="time ${cls}"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16"/></svg>${esc([label, t.dueTime].filter(Boolean).join(' ') || 'Hôm nay')}</span>`;
+function renderHeader() {
+    const titles = { inbox: 'Hộp thư', upcoming: 'Sắp tới', labels: 'Bộ lọc & Nhãn', search: 'Tìm kiếm' };
+    const p = currentProject();
+    const m = currentMember();
+    const s = state.stats || {};
+    let title, sub;
+    if (view === 'today') {
+        title = `${greeting()}, ${state.me?.name ?? ''}`;
+        const left = (s.todayTotal ?? 0) - (s.todayDone ?? 0);
+        sub = [`Đã xong ${s.todayDone ?? 0}/${s.todayTotal ?? 0} mục tiêu hôm nay`,
+            left ? `còn ${left} mục tiêu` : 'đã hoàn thành tất cả 🎉',
+            s.overdue ? `${s.overdue} quá hạn` : 'đúng tiến độ'].join(' · ');
+    } else if (p) {
+        title = p.name;
+        sub = `${p.doneCount}/${p.doneCount + p.openCount} mục tiêu hoàn thành`
+            + (p.shareKey ? ` · ${p.members.length} thành viên` : ' · dự án cá nhân');
+    } else if (m) {
+        title = m.name;
+        sub = `${seenText(m.id)} · ${m.doneCount}/${m.doneCount + m.openCount} mục tiêu trong dự án chung`;
+    } else if (view === 'search') {
+        title = 'Tìm kiếm';
+        sub = state.query ? `${state.tasks.length} kết quả cho “${state.query}”` : 'Nhập từ khoá ở ô tìm kiếm bên trái';
+    } else {
+        title = titles[view];
+        const open = state.tasks.filter((t) => !t.done).length;
+        sub = view === 'labels' ? 'Tính năng đang được phát triển' : `${open} mục tiêu đang mở`;
     }
-    // Hiện người tạo khi mục tiêu thuộc dự án chung và danh sách không nhóm theo người.
-    const owner = p?.shareKey && !opts.byMember
+    $('#viewTitle').textContent = title;
+    $('#viewSub').textContent = sub;
+    $('#viewActions').innerHTML = p ? projectActions(p) : '';
+}
+
+// ----- Một dòng mục tiêu -----
+function rowHtml(t, i, opts = {}) {
+    const pr = PRIORITY[t.priority] || PRIORITY[4];
+    const isNext = opts.next?.id === t.id;
+    let status;
+    if (t.done) status = '<span class="status green">Đã xong</span>';
+    else if (isNext) status = '<span class="status blue">Đang làm</span>';
+    else if (isOverdue(t)) status = `<span class="status red">Quá hạn ${esc(shortDate(t.dueDate))}</span>`;
+    else if (t.dueDate && t.dueDate !== todayIso()) status = `<span class="status orange">${esc(shortDate(t.dueDate))}</span>`;
+    else status = '<span class="status">Chưa bắt đầu</span>';
+
+    const owner = projectById(t.projectId)?.shareKey && !opts.byMember
         ? `<span class="owner">${avatar(t.ownerId, t.ownerName, 'xs')}${t.mine ? 'Bạn' : esc(t.ownerName)}</span>` : '';
-    const proj = p && !view.startsWith('p')
-        ? `<span class="task-project">${esc(p.name)} <b style="color:${esc(p.color)}">#</b></span>` : '';
+    const check = t.mine
+        ? `<button class="num-check ${pr.cls} ${isNext ? 'next' : ''}" data-toggle="${t.id}" title="${t.done ? 'Bỏ hoàn thành' : 'Đánh dấu hoàn thành'}">${i}</button>`
+        : `<span class="num-check readonly ${pr.cls}" title="Mục tiêu của ${esc(t.ownerName)}">${i}</span>`;
     return `
-        <div class="task ${t.done ? 'done' : ''}">
-            ${t.mine
-                ? `<button class="check p${t.priority}" data-toggle="${t.id}" title="Đánh dấu hoàn thành"></button>`
-                : `<span class="check readonly p${t.priority}" title="Mục tiêu của ${esc(t.ownerName)}"></span>`}
-            <div class="task-body">
-                <div class="task-title">${esc(t.title)}</div>
-                ${date || owner || proj ? `<div class="task-meta">${date}${owner}${proj}</div>` : ''}
-            </div>
-            ${t.mine ? `<button class="icon-btn task-del" data-delete="${t.id}" title="Xoá">
-                <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>
-            </button>` : ''}
+        <div class="row ${t.done ? 'done' : ''}">
+            ${check}
+            <div class="row-title"><span class="t" title="${esc(t.title)}">${esc(t.title)}</span>${opts.noTag ? '' : projectTag(t)}${owner}</div>
+            <span class="row-type">${ICON.flag}${pr.label}</span>
+            <span class="row-time ${isOverdue(t) ? 'overdue' : ''}">${esc(t.dueTime || '—')}</span>
+            ${status}
+            ${t.mine ? `<button class="icon-btn row-del" data-delete="${t.id}" title="Xoá">${ICON.trash}</button>` : '<span></span>'}
         </div>`;
 }
 
-function groupHtml(title, tasks, opts = {}) {
+/** Một nhóm có thể thu gọn: pill + số lượng + mô tả bên phải. */
+function stageHtml(key, head, right, rows, { open = true, footer = '' } = {}) {
+    const closed = key in state.closed ? state.closed[key] : !open;
     return `
-        <section class="group">
-            ${title ? `<div class="group-title">${title}</div>` : ''}
-            ${tasks.map((t) => taskHtml(t, opts)).join('')}
-            ${!tasks.length && opts.emptyText ? `<div class="group-empty">${opts.emptyText}</div>` : ''}
-            ${opts.noAdd ? '' : `<button class="add-task" data-add-project="${opts.projectId ?? ''}" data-add-date="${opts.date ?? ''}"><span class="plus">+</span> Thêm mục tiêu</button>`}
-        </section>`;
+        <div class="stage ${closed ? 'closed' : ''}">
+            <button class="stage-head" data-stage="${esc(key)}">${head}<span class="spacer"></span><span class="right">${right}</span>${ICON.chev}</button>
+            <div class="stage-rows">${rows}${footer}</div>
+        </div>`;
 }
 
-/** Tiêu đề nhóm cho một thành viên: avatar, tên, trạng thái, tiến độ. */
-function memberTitle(m) {
-    return `${avatar(m.id, m.name)}
-        <span>${m.isMe ? 'Mục tiêu của tôi' : esc(m.name)}</span>
-        ${m.isMe ? '' : `<small class="seen ${isOnline(m.id) ? 'on' : ''}" data-seen="${esc(m.id)}">${esc(seenText(m.id))}</small>`}
-        <span class="spacer"></span>${progress(m.doneCount, m.openCount)}`;
+const addBtn = (projectId = '', date = '') =>
+    `<button class="add-task" data-add-project="${projectId}" data-add-date="${date}"><span class="plus">+</span> Thêm mục tiêu</button>`;
+
+function pathCard(title, count, sub, body, right = '') {
+    return `
+        <section class="card path" id="pathCard">
+            <div class="card-head">${title}<span class="chip-n">${count}</span><span class="muted">${sub}</span>
+                <span class="spacer"></span>${right}</div>
+            ${body}
+        </section>`;
 }
 
 function renderMain() {
     const g = $('#groups');
-    const titles = { today: 'Hôm nay', inbox: 'Hộp thư', upcoming: 'Sắp tới', labels: 'Bộ lọc & Nhãn', search: 'Tìm kiếm' };
     const p = currentProject();
     const m = currentMember();
-    $('#viewTitle').textContent = p ? p.name : m ? m.name : titles[view];
-    $('#viewActions').innerHTML = p ? projectActions(p) : '';
 
     if (view === 'today') {
-        const isShared = (t) => projectById(t.projectId)?.shareKey;
-        const mine = state.tasks.filter((t) => !isShared(t));
-        const shared = state.tasks.filter(isShared);
-        g.innerHTML = groupHtml('Của tôi', mine, { date: todayIso() })
-            + (shared.length ? groupHtml('Chia sẻ <span class="badge">cùng key</span>', shared, { noAdd: true }) : '');
+        g.innerHTML = todayHtml();
+    } else if (view === 'search') {
+        g.innerHTML = !state.query
+            ? '<section class="card empty"><b>Tìm mục tiêu</b>Gõ vào ô tìm kiếm ở thanh bên để tìm theo tên.</section>'
+            : state.tasks.length
+                ? pathCard('Kết quả', state.tasks.length, '', `<div class="stage"><div class="stage-rows">${state.tasks.map((t, i) => rowHtml(t, i + 1)).join('')}</div></div>`)
+                : '<section class="card empty"><b>Không tìm thấy</b>Thử một từ khoá khác.</section>';
     } else if (view === 'inbox') {
-        g.innerHTML = groupHtml('', state.tasks);
+        g.innerHTML = listCard(state.tasks, { noTag: true });
     } else if (view === 'upcoming') {
         const byDate = {};
         state.tasks.forEach((t) => (byDate[t.dueDate] ??= []).push(t));
-        g.innerHTML = Object.keys(byDate).map((d) => groupHtml(esc(dateLabel(d)), byDate[d], { date: d })).join('')
-            || '<div class="empty">Không có mục tiêu nào sắp tới 🎉</div>'
-            + groupHtml('', [], { date: isoDate(new Date(Date.now() + 86400000)) });
-    } else if (view === 'search') {
-        if (!$('#searchInput')) {
-            g.innerHTML = `<input id="searchInput" class="search-input" placeholder="Tìm mục tiêu..." autocomplete="off"><div id="searchResults"></div>`;
-            $('#searchInput').value = state.query;
-            $('#searchInput').focus();
-        }
-        $('#searchResults').innerHTML = state.query
-            ? (state.tasks.length ? groupHtml('', state.tasks, { noAdd: true }) : '<div class="empty">Không tìm thấy</div>') : '';
+        const tomorrow = isoDate(new Date(Date.now() + 86400000));
+        const stages = Object.keys(byDate).map((d) => stageHtml('up' + d,
+            `<span class="pill purple">${esc(dateLabel(d))}</span><span class="num">${byDate[d].length}</span>`, '',
+            byDate[d].map((t, i) => rowHtml(t, i + 1)).join(''), { footer: addBtn('', d) })).join('');
+        g.innerHTML = pathCard('Sắp tới', state.tasks.length, `${Object.keys(byDate).length} ngày có kế hoạch`,
+            stages || `<div class="empty"><b>Không có mục tiêu nào sắp tới 🎉</b>Lên kế hoạch cho ngày mai nhé.</div>
+                <div class="stage"><div class="stage-rows">${addBtn('', tomorrow)}</div></div>`);
     } else if (p && p.shareKey) {
         // Dự án chung: mỗi thành viên một nhóm để thấy rõ mục tiêu của nhau.
-        g.innerHTML = p.members.map((mem) => groupHtml(memberTitle(mem),
-            state.tasks.filter((t) => t.ownerId === mem.id),
-            { byMember: true, noAdd: !mem.isMe, projectId: p.id, emptyText: mem.isMe ? '' : 'Chưa có mục tiêu nào' })).join('');
+        const stages = p.members.map((mem) => {
+            const tasks = state.tasks.filter((t) => t.ownerId === mem.id);
+            const head = `<span class="group-member">${avatar(mem.id, mem.name)}<b class="ellipsis">${mem.isMe ? 'Mục tiêu của tôi' : esc(mem.name)}</b>
+                ${mem.isMe ? '' : `<small class="seen ${isOnline(mem.id) ? 'on' : ''}" data-seen="${esc(mem.id)}">${esc(seenText(mem.id))}</small>`}</span>`;
+            return stageHtml('m' + p.id + mem.id, head, progress(mem.doneCount, mem.openCount),
+                tasks.map((t, i) => rowHtml(t, i + 1, { byMember: true, noTag: true })).join('')
+                || `<div class="stage-empty">${mem.isMe ? 'Bạn chưa có mục tiêu nào' : 'Chưa có mục tiêu nào'}</div>`,
+                { footer: mem.isMe ? addBtn(p.id) : '' });
+        }).join('');
+        g.innerHTML = pathCard('Thành viên', p.members.length, `${p.doneCount}/${p.doneCount + p.openCount} hoàn thành`, stages);
     } else if (p) {
-        g.innerHTML = groupHtml('', state.tasks, { projectId: p.id });
+        g.innerHTML = listCard(state.tasks, { noTag: true, projectId: p.id });
     } else if (m) {
         g.innerHTML = memberHeader(m) + memberGroups(m);
     } else {
-        g.innerHTML = '<div class="empty">Tính năng đang được phát triển…</div>';
+        g.innerHTML = '<section class="card empty"><b>Bộ lọc & Nhãn</b>Tính năng đang được phát triển…</section>';
     }
+}
+
+/** Danh sách chia 2 nhóm: Đang làm + Đã xong. */
+function listCard(tasks, opts = {}) {
+    const open = tasks.filter((t) => !t.done);
+    const done = tasks.filter((t) => t.done);
+    const next = pickNext(open);
+    const stages = stageHtml('open' + view, `<span class="pill purple">Đang mở</span><span class="num">${open.length}</span>`, '',
+        open.map((t, i) => rowHtml(t, i + 1, { ...opts, next })).join(''), { footer: addBtn(opts.projectId ?? '', opts.date ?? '') })
+        + (done.length ? stageHtml('done' + view, `<span class="pill green">Đã xong</span><span class="num">${done.length}</span>`, '',
+            done.map((t, i) => rowHtml(t, i + 1, opts)).join(''), { open: false }) : '');
+    return pathCard('Mục tiêu', tasks.length, `${done.length} đã xong`, stages);
+}
+
+// ----- Dashboard "Hôm nay" -----
+function todayHtml() {
+    const tasks = state.tasks;
+    const done = tasks.filter((t) => t.done);
+    const open = tasks.filter((t) => !t.done);
+    const next = pickNext(open);
+    const rest = open.filter((t) => t !== next);
+    const s = state.stats || {};
+    const pos = done.length + 1;
+
+    let hero;
+    if (next) {
+        const p = projectById(next.projectId);
+        const pr = PRIORITY[next.priority];
+        const tip = isOverdue(next)
+            ? `Mục tiêu này đã quá hạn từ ${shortDate(next.dueDate)}. Hoàn thành ngay để lấy lại nhịp độ.`
+            : next.priority <= 2
+                ? `Đây là mục tiêu “${pr.label.toLowerCase()}” nhất hôm nay. Xong việc này trước, các mục tiêu còn lại sẽ nhẹ nhàng hơn.`
+                : s.streak
+                    ? `Bạn đang có chuỗi ${s.streak} ngày liên tiếp. Hoàn thành mục tiêu này để giữ chuỗi nhé!`
+                    : `Bạn đã xong ${done.length}/${tasks.length} mục tiêu hôm nay. Bắt đầu với việc này để tạo đà.`;
+        hero = `
+            <section class="card hero">
+                <div class="hero-art">${heroArt()}</div>
+                <div class="hero-body">
+                    <div class="hero-top">
+                        <h2>${esc(next.title)}</h2>
+                        <span class="tag-outline">Tiếp theo · ${pos}/${tasks.length}</span>
+                    </div>
+                    <div class="meta">
+                        <span>${ICON.clock}${esc(next.dueTime || 'Cả ngày')}</span>
+                        <span>${p ? ICON.folder + esc(p.name) : ICON.inbox + 'Hộp thư'}</span>
+                        <span class="${isOverdue(next) ? 'overdue' : ''}">${ICON.cal}${esc(dateLabel(next.dueDate || todayIso()))}</span>
+                        <span>${ICON.flag}${pr.label}</span>
+                    </div>
+                    <div class="insight">
+                        <div class="insight-label"><span class="spark"></span>Gợi ý từ Second Brain</div>
+                        ${esc(tip)}
+                    </div>
+                    <div class="hero-foot">
+                        <button class="link-btn underline" data-scroll="pathCard">Xem toàn bộ lộ trình</button>
+                        <span class="spacer"></span>
+                        <button class="square-btn" data-delete="${next.id}" title="Xoá mục tiêu">${ICON.trash}</button>
+                        <button class="primary-btn" data-toggle="${next.id}">Hoàn thành ${ICON.arrow}</button>
+                    </div>
+                </div>
+            </section>`;
+    } else {
+        hero = `
+            <section class="card hero">
+                <div class="hero-art">${heroArt()}</div>
+                <div class="hero-body">
+                    <div class="hero-top"><h2>${tasks.length ? 'Đã hoàn thành tất cả 🎉' : 'Hôm nay chưa có mục tiêu'}</h2></div>
+                    <div class="insight">
+                        <div class="insight-label"><span class="spark"></span>Gợi ý từ Second Brain</div>
+                        ${tasks.length ? 'Tuyệt vời! Nghỉ ngơi một chút hoặc lên kế hoạch cho ngày mai.' : 'Đặt 1–3 mục tiêu nhỏ cho hôm nay để bắt đầu chuỗi ngày của bạn.'}
+                    </div>
+                    <div class="hero-foot"><span class="spacer"></span>
+                        <button class="primary-btn" data-open-add>${ICON.plus} Thêm mục tiêu</button></div>
+                </div>
+            </section>`;
+    }
+
+    const sharedCount = tasks.filter((t) => projectById(t.projectId)?.shareKey).length;
+    let n = 0;
+    const doneRows = done.map((t) => rowHtml(t, ++n)).join('');
+    const nextRow = next ? rowHtml(next, ++n, { next }) : '';
+    const restRows = rest.map((t) => rowHtml(t, ++n, { next })).join('');
+    const overdue = open.filter(isOverdue).length;
+
+    const stages =
+        (done.length ? stageHtml('tDone', `<span class="pill green">Đã xong</span><span class="num">${done.length}</span>`,
+            `Đã hoàn thành ${Math.round((done.length / tasks.length) * 100)}%`, doneRows, { open: false }) : '')
+        + (next ? stageHtml('tNext', `<span class="pill blue">Tiếp theo</span><span class="num">1</span>`,
+            'Đề xuất cho bạn', nextRow) : '')
+        + stageHtml('tRest', `<span class="pill purple">Sắp làm</span><span class="num">${rest.length}</span>`,
+            overdue ? `${overdue} quá hạn` : rest.length ? 'Theo ưu tiên' : '',
+            restRows || (next ? '' : '<div class="stage-empty">Không còn mục tiêu nào</div>'), { footer: addBtn('', todayIso()) });
+
+    return hero + pathCard('Lộ trình hôm nay', tasks.length,
+        sharedCount ? `${sharedCount} mục tiêu chia sẻ` : `${s.weekDone ?? 0} xong trong tuần`, stages,
+        `<button class="link-btn" data-view="upcoming">Sắp tới ${ICON.arrow}</button>`);
+}
+
+function heroArt() {
+    return `<div class="screen"><i></i><i></i><i></i>
+        <svg class="curve" viewBox="0 0 200 80" preserveAspectRatio="none">
+            <path d="M0 70 C 30 70, 40 40, 70 45 S 110 60, 130 30 S 170 10, 200 12" stroke="var(--accent)"/>
+            <circle cx="186" cy="12" r="4" fill="var(--accent)" stroke="var(--card)" stroke-width="2"/>
+        </svg></div>`;
+}
+
+// ----- Cột phải -----
+function renderSide() {
+    const s = state.stats || {};
+    const online = state.partners.filter((p) => p.online);
+    const partnersCard = state.partners.length
+        ? `<button class="notice" data-view="u:${esc((online[0] || state.partners[0]).id)}">
+                <span class="notice-icon">${ICON.users}</span>
+                <span class="notice-text"><b>${online.length ? `${online.length} bạn đồng hành đang online` : 'Bạn đồng hành'}</b>
+                    <small>${esc(state.partners.slice(0, 3).map((p) => p.name).join(', '))}${state.partners.length > 3 ? '…' : ''}</small></span>
+                <span class="stack">${state.partners.slice(0, 3).map((p) => avatar(p.id, p.name)).join('')}</span>
+           </button>`
+        : `<button class="notice" id="joinKey3">
+                <span class="notice-icon">${ICON.key}</span>
+                <span class="notice-text"><b>Cùng tiến bộ với bạn bè</b><small>Tham gia dự án chung bằng key</small></span>
+                ${ICON.arrow}
+           </button>`;
+
+    const projects = [...state.projects]
+        .map((p) => ({ p, total: p.openCount + p.doneCount, pct: p.openCount + p.doneCount ? Math.round((p.doneCount / (p.openCount + p.doneCount)) * 100) : 0 }))
+        .filter((x) => x.total)
+        .sort((a, b) => a.pct - b.pct)
+        .slice(0, 4);
+    const level = (pct) => pct < 34 ? ['red', 'Cần tập trung', 'var(--red)'] : pct < 67 ? ['orange', 'Đang tiến', 'var(--orange)'] : ['green', 'Tốt', 'var(--green)'];
+    const rings = projects.map(({ p, pct }) => {
+        const [cls, label, color] = level(pct);
+        return `<button class="ring-row" data-view="p${p.id}">${ring(pct, color)}
+            <span class="ring-info"><span class="ellipsis">${esc(p.name)}</span><b>${pct}%</b></span>
+            <span class="badge ${cls}">${label}</span></button>`;
+    }).join('') || '<div class="empty">Tạo dự án và thêm mục tiêu để theo dõi tiến độ</div>';
+
+    const recent = (s.recent || []).map((t) => {
+        const p = projectById(t.projectId);
+        const doneItem = t.done;
+        return `<div class="tl">
+            <span class="tl-icon ${doneItem ? 'done' : 'add'}">${doneItem ? ICON.check : ICON.plus}</span>
+            <span class="tl-body"><b>${doneItem ? 'Hoàn thành' : 'Thêm'}: ${esc(t.title)}</b>
+                <small>${esc(p ? p.name : 'Hộp thư')} · ${t.mine ? 'Bạn' : esc(t.ownerName)}</small></span>
+            <span class="tl-date">${esc(shortDate(doneItem ? t.doneAt : t.createdAt))}</span>
+        </div>`;
+    }).join('') || '<div class="empty">Chưa có hoạt động nào</div>';
+
+    $('#side').innerHTML = `
+        <section class="card stats">
+            <div class="stat"><span class="stat-icon blue">${ICON.target}</span><small>Hôm nay</small><b>${s.todayDone ?? 0}/${s.todayTotal ?? 0}</b></div>
+            <div class="stat"><span class="stat-icon green">${ICON.bolt}</span><small>Tuần này</small><b>${s.weekDone ?? 0} xong</b></div>
+            <div class="stat"><span class="stat-icon orange">${ICON.fire}</span><small>Chuỗi</small><b>${s.streak ?? 0} ngày</b></div>
+        </section>
+        <section class="card">${partnersCard}</section>
+        <section class="card">
+            <div class="card-head">Tiến độ dự án <span class="chip-n grey">${state.projects.length}</span>
+                <span class="spacer"></span><span class="goal-chip">Mục tiêu: 80%</span></div>
+            ${rings}
+        </section>
+        <section class="card">
+            <div class="card-head">Hoạt động gần đây<span class="spacer"></span>
+                <span class="muted">${s.open ?? 0} đang mở</span></div>
+            <div class="timeline">${recent}</div>
+        </section>`;
 }
 
 function memberHeader(m) {
     const projects = state.projects.filter((p) => p.members.some((x) => x.id === m.id));
     return `
-        <div class="member-card">
+        <section class="card member-card">
             ${avatar(m.id, m.name, 'lg')}
             <div class="member-card-info">
+                <b>${esc(m.name)}</b>
                 <div class="seen ${isOnline(m.id) ? 'on' : ''}" data-seen="${esc(m.id)}">${esc(seenText(m.id))}</div>
-                <div class="muted">Cùng ${projects.length} dự án: ${projects.map((p) => `<a data-view="p${p.id}" class="link"># ${esc(p.name)}</a>`).join(', ')}</div>
+                <div class="muted">Cùng ${projects.length} dự án: ${projects.map((p) => `<a data-view="p${p.id}" class="link">${esc(p.name)}</a>`).join(', ')}</div>
             </div>
             <div class="member-card-progress">${progress(m.doneCount, m.openCount)}</div>
-        </div>`;
+        </section>`;
 }
 
 function memberGroups(m) {
-    if (!state.tasks.length) return `<div class="empty">${esc(m.name)} chưa có mục tiêu nào trong các dự án chung</div>`;
+    if (!state.tasks.length) return `<section class="card empty">${esc(m.name)} chưa có mục tiêu nào trong các dự án chung</section>`;
     const byProject = {};
     state.tasks.forEach((t) => (byProject[t.projectId] ??= []).push(t));
-    return Object.entries(byProject).map(([pid, tasks]) => {
+    const stages = Object.entries(byProject).map(([pid, tasks]) => {
         const p = projectById(+pid);
-        return groupHtml(`<span class="hash" style="color:${esc(p?.color)}">#</span> ${esc(p?.name)}`, tasks, { byMember: true, noAdd: true });
+        return stageHtml('u' + m.id + pid, `<span class="hash" style="background:${esc(p?.color)}"></span><b>${esc(p?.name)}</b><span class="num">${tasks.length}</span>`,
+            '', tasks.map((t, i) => rowHtml(t, i + 1, { byMember: true, noTag: true })).join(''));
     }).join('');
+    return pathCard('Mục tiêu', state.tasks.length, `trong ${Object.keys(byProject).length} dự án chung`, stages);
 }
 
 function projectActions(p) {
@@ -308,8 +589,7 @@ function openAddForm(btn) {
             <input name="dueDate" type="date" value="${btn.dataset.addDate}">
             <input name="dueTime" type="time">
             <select name="priority">
-                <option value="4">Ưu tiên 4</option><option value="3">Ưu tiên 3</option>
-                <option value="2">Ưu tiên 2</option><option value="1">Ưu tiên 1</option>
+                ${[4, 3, 2, 1].map((n) => `<option value="${n}">${PRIORITY[n].label}</option>`).join('')}
             </select>
             <select name="projectId">
                 <option value="">📥 Hộp thư</option>
@@ -329,7 +609,7 @@ function openAddForm(btn) {
         try {
             await api('POST', 'tasks', data);
             await refresh();
-            // Mở lại form để nhập liên tục như Todoist.
+            // Mở lại form để nhập liên tục.
             const again = document.querySelector(`.add-task[data-add-project="${btn.dataset.addProject}"][data-add-date="${btn.dataset.addDate}"]`);
             if (again) openAddForm(again);
         } catch (err) {
@@ -337,7 +617,16 @@ function openAddForm(btn) {
         }
     };
     btn.replaceWith(form);
+    // Mở nhóm chứa form nếu đang thu gọn.
+    form.closest('.stage')?.classList.remove('closed');
     form.querySelector('input').focus();
+    form.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+async function openAddAnywhere() {
+    if (!['today', 'inbox', 'upcoming'].includes(view) && !currentProject()) await go('today');
+    const btn = $('.add-task');
+    if (btn) openAddForm(btn);
 }
 
 // ---------- Events ----------
@@ -347,20 +636,27 @@ document.addEventListener('click', async (e) => {
     const d = t.dataset;
     try {
         if (d.view) {
-            view = d.view;
-            if (view !== 'search') state.query = '';
-            $('#groups').innerHTML = '';
-            await loadTasks();
-            render();
+            await go(d.view);
         } else if (d.toggle) {
             const task = state.tasks.find((x) => x.id === +d.toggle);
-            await api('PATCH', 'tasks/' + task.id, { done: !task.done });
+            await api('PATCH', 'tasks/' + d.toggle, { done: !task?.done });
+            if (task && !task.done) toast('✅ Đã hoàn thành “' + task.title + '”');
             await refresh();
         } else if (d.delete) {
+            const task = state.tasks.find((x) => x.id === +d.delete);
+            if (task && !confirm(`Xoá mục tiêu “${task.title}”?`)) return;
             await api('DELETE', 'tasks/' + d.delete);
             await refresh();
         } else if ('addProject' in d) {
             openAddForm(t);
+        } else if ('openAdd' in d) {
+            openAddAnywhere();
+        } else if (d.stage) {
+            const stage = t.closest('.stage');
+            stage.classList.toggle('closed');
+            state.closed[d.stage] = stage.classList.contains('closed');
+        } else if (d.scroll) {
+            document.getElementById(d.scroll)?.scrollIntoView({ behavior: 'smooth' });
         } else if (d.share) {
             await api('POST', `projects/${d.share}/share`);
             await refresh();
@@ -387,6 +683,8 @@ document.addEventListener('click', async (e) => {
         } else if (d.collapse) {
             t.classList.toggle('closed');
             document.getElementById(d.collapse).classList.toggle('hidden');
+        } else if (t.id === 'joinKey3') {
+            openKeyDialog();
         }
     } catch (err) {
         toast(err.message);
@@ -394,26 +692,33 @@ document.addEventListener('click', async (e) => {
 });
 
 let searchTimer;
-document.addEventListener('input', (e) => {
-    if (e.target.id !== 'searchInput') return;
+$('#sideSearch').addEventListener('input', (e) => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(async () => {
-        state.query = e.target.value;
+        state.query = e.target.value.trim();
+        if (!state.query && view === 'search') return go('today');
+        view = 'search';
         await loadTasks();
+        renderSidebar();
+        renderHeader();
         renderMain();
     }, 250);
 });
+$('#sideSearch').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.target.value = ''; go('today'); }
+});
 
-$('#openAdd').onclick = async () => {
-    if (!['today', 'inbox'].includes(view) && !currentProject()) {
-        view = 'today';
-        await loadTasks();
-        render();
-    }
-    const btn = $('.add-task');
-    if (btn) openAddForm(btn);
-};
-$('#toggleSidebar').onclick = $('#openSidebar').onclick = () => $('#app').classList.toggle('collapsed');
+$('#openAdd').onclick = openAddAnywhere;
+$('#openSidebar').onclick = () => $('#app').classList.toggle('collapsed');
+if (window.innerWidth <= 760) $('#app').classList.add('collapsed');
+
+function applyTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem('theme', theme);
+    $('#themeLabel').textContent = theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
+}
+applyTheme(document.documentElement.dataset.theme);
+$('#themeToggle').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 
 $('#userBtn').onclick = async () => {
     const name = prompt('Tên hiển thị của bạn (người cùng key sẽ thấy tên này):', state.me.name);
@@ -442,11 +747,12 @@ function setupDialog(dialog, onOk) {
 }
 
 const keyDialog = $('#keyDialog');
-$('#joinKey').onclick = () => {
+function openKeyDialog() {
     $('#keyInput').value = '';
     $('#keyError').textContent = '';
     keyDialog.showModal();
-};
+}
+$('#joinKey').onclick = $('#joinKey2').onclick = openKeyDialog;
 setupDialog(keyDialog, async () => {
     const p = await api('POST', 'projects/join', { key: $('#keyInput').value.trim() });
     view = 'p' + p.id;
