@@ -1,10 +1,22 @@
 // ---------- API ----------
 async function api(method, path, body) {
-    const res = await fetch('api/' + path, {
-        method,
-        headers: body ? { 'Content-Type': 'application/json' } : {},
-        body: body ? JSON.stringify(body) : undefined
-    });
+    let res;
+    try {
+        res = await fetch('api/' + path, {
+            method,
+            headers: body ? { 'Content-Type': 'application/json' } : {},
+            body: body ? JSON.stringify(body) : undefined
+        });
+    } catch (e) {
+        // Mất mạng: thao tác ghi được xếp hàng và gửi lại khi có mạng (xem sync.js).
+        Sync.setOffline(true);
+        if (Sync.canQueue(method, path)) {
+            Sync.enqueue(method, path, body);
+            return { queued: true };
+        }
+        throw new Error('Không có kết nối mạng');
+    }
+    if (method === 'GET') Sync.setOffline(!!res.headers.get('X-SB-Offline'));
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Lỗi ' + res.status);
     return data;
@@ -17,7 +29,7 @@ let view = 'today';
 
 const $ = (s) => document.querySelector(s);
 // Các phân hệ cắm thêm (Tài chính, Tập luyện) — cùng một giao diện: isView/load/header/main/side/...
-const MODS = [Fin, Gym];
+const MODS = [Fin, Gym];  // Sync, Devices: sync.js, devices.js
 const modOf = (v) => MODS.find((m) => m.isView(v));
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -31,6 +43,7 @@ const currentProject = () => (view.startsWith('p') ? projectById(+view.slice(1))
 const currentMember = () => (view.startsWith('u:') ? partnerById(view.slice(2)) : null);
 
 function toast(msg) {
+    if (Sync.holding()) return;   // đang hiện thông báo ngoại tuyến quan trọng hơn
     const t = $('#toast');
     t.textContent = msg;
     t.classList.add('show');
@@ -125,11 +138,12 @@ async function refresh() {
         [state.projects, state.counts, partners, state.stats] = await Promise.all(
             [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence'), api('GET', 'tasks/stats'), ...MODS.map((m) => m.load())]);
         applyPartners(partners);
+        if (!Sync.offline) Sync.markSynced();
         if ((view.startsWith('p') && !currentProject()) || (view.startsWith('u:') && !currentMember())) view = 'today';
         await loadTasks();
         render();
     } catch (e) {
-        toast(e.message);
+        if (!Sync.offline) toast(e.message);   // ngoại tuyến: thanh trạng thái đã báo
     }
 }
 
@@ -207,6 +221,7 @@ function ring(pct, color) {
 // ---------- Render ----------
 function render() {
     renderSidebar(); renderHeader(); renderMain(); renderSide();
+    Sync.paintTabs(view);
     modOf(view)?.afterRender();
 }
 
@@ -230,6 +245,8 @@ function renderSidebar() {
 
     $('[data-count="today"]').textContent = state.counts.today || '';
     $('[data-count="inbox"]').textContent = state.counts.inbox || '';
+    $('#devCount').textContent = state.me?.devices || '';
+    $('#devLabel').textContent = state.me?.device ? 'Thiết bị đã kết nối' : 'Kết nối điện thoại';
     const fb = Object.assign({}, ...MODS.map((m) => m.navBadges()));
     document.querySelectorAll('[data-fin-badge]').forEach((el) => { el.textContent = fb[el.dataset.finBadge] || ''; });
 
@@ -736,11 +753,23 @@ $('#sideSearch').addEventListener('keydown', (e) => {
 $('#openAdd').onclick = openAddAnywhere;
 $('#openSidebar').onclick = () => $('#app').classList.toggle('collapsed');
 if (window.innerWidth <= 760) $('#app').classList.add('collapsed');
+// Điện thoại: menu trượt mở từ tab "Menu", chạm nền tối hoặc Esc để đóng.
+$('#tabMenu').onclick = () => $('#app').classList.remove('collapsed');
+$('#scrim').onclick = () => $('#app').classList.add('collapsed');
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && window.innerWidth <= 760 && !document.querySelector('dialog[open]')) $('#app').classList.add('collapsed');
+});
+$('#devicesBtn').onclick = () => {
+    if (window.innerWidth <= 760) $('#app').classList.add('collapsed');
+    Devices.open();
+};
 
 function applyTheme(theme) {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('theme', theme);
     $('#themeLabel').textContent = theme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
+    // Màu thanh trạng thái điện thoại theo nền app.
+    $('#themeColor').content = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#eef1f6';
 }
 applyTheme(document.documentElement.dataset.theme);
 $('#themeToggle').onclick = () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
@@ -855,6 +884,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 window.addEventListener('pagehide', () => navigator.sendBeacon('api/presence/offline'));
 
 (async () => {
+    Sync.boot();
+    Devices.boot();
+    // Mở từ mã QR kết nối: ghép thiết bị trước khi tải dữ liệu.
+    await Devices.handlePairHash();
     const hash = decodeURIComponent(location.hash.slice(1));
     if (modOf(hash)) view = hash;
     try {
@@ -864,4 +897,11 @@ window.addEventListener('pagehide', () => navigator.sendBeacon('api/presence/off
     }
     await refresh();
     handleInviteLink();
+    // Lối tắt từ biểu tượng app (?add=1): mở ngay form thêm.
+    const params = new URLSearchParams(location.search);
+    if (params.get('add')) {
+        history.replaceState(null, '', location.pathname + location.hash);
+        openAddAnywhere();
+    }
+    Devices.maybeOnboard();
 })();

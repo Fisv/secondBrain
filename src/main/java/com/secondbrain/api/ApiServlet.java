@@ -28,7 +28,7 @@ public abstract class ApiServlet extends HttpServlet {
         resp.setContentType("application/json;charset=UTF-8");
         Object result;
         try {
-            result = handle(new Request(req));
+            result = handle(new Request(req, resp));
         } catch (ApiException e) {
             resp.setStatus(e.status);
             result = Map.of("error", e.getMessage());
@@ -43,13 +43,15 @@ public abstract class ApiServlet extends HttpServlet {
     /** Gói gọn request: phương thức, các đoạn đường dẫn, body JSON và user hiện tại. */
     protected static final class Request {
         public final HttpServletRequest raw;
+        public final HttpServletResponse resp;
         public final String method;
         public final String[] path;
         public final String userId;
         private JsonObject body;
 
-        Request(HttpServletRequest raw) {
+        Request(HttpServletRequest raw, HttpServletResponse resp) {
             this.raw = raw;
+            this.resp = resp;
             this.method = raw.getMethod();
             String info = raw.getPathInfo();
             this.path = info == null || info.equals("/") ? new String[0] : info.substring(1).split("/");

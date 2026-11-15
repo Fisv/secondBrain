@@ -29,9 +29,25 @@ public class UserFilter extends HttpFilter {
     @Override
     protected void doFilter(HttpServletRequest req, HttpServletResponse resp, FilterChain chain)
             throws IOException, ServletException {
-        String uid = readCookie(req);
+        String uid = null;
         try {
-            if (uid == null || !touch(uid)) {
+            // Thiết bị đã ghép (điện thoại...) dùng token riêng, ưu tiên hơn cookie user.
+            String devToken = readCookie(req, Devices.COOKIE);
+            if (devToken != null) {
+                Devices.Resolved d = Devices.resolve(devToken);
+                if (d != null && touch(d.userId())) {
+                    uid = d.userId();
+                    req.setAttribute(Devices.DEVICE_ATTR, d.deviceId());
+                } else {
+                    Devices.clearCookie(req, resp);   // đã bị thu hồi
+                }
+            }
+            if (uid == null) {
+                uid = readCookie(req, COOKIE);
+            }
+            // Thiết bị mới đang ghép: không tạo tài khoản rỗng chỉ để rồi bỏ đi.
+            boolean claiming = uid == null && req.getRequestURI().endsWith("/api/devices/claim");
+            if (!claiming && (uid == null || (req.getAttribute(Devices.DEVICE_ATTR) == null && !touch(uid)))) {
                 uid = UUID.randomUUID().toString();
                 create(uid);
                 Cookie c = new Cookie(COOKIE, uid);
@@ -47,12 +63,12 @@ public class UserFilter extends HttpFilter {
         chain.doFilter(req, resp);
     }
 
-    private static String readCookie(HttpServletRequest req) {
+    private static String readCookie(HttpServletRequest req, String name) {
         if (req.getCookies() == null) {
             return null;
         }
         for (Cookie c : req.getCookies()) {
-            if (COOKIE.equals(c.getName())) {
+            if (name.equals(c.getName())) {
                 return c.getValue();
             }
         }

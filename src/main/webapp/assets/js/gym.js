@@ -251,7 +251,7 @@ const Gym = (() => {
         data.forEach((d, i) => {
             const bx = ml + band * i + (band - bw) / 2, last = i === data.length - 1;
             g += barPath(bx, y(d.vol), bw, y(0) - y(d.vol), last ? 'var(--accent)' : 'var(--c5)', `Tuần ${fmtDM(d.ws)} · ${d.count} buổi · ${fmtVol(d.vol)}`);
-            if (d.count) g += `<text x="${bx + bw / 2}" y="${y(d.vol) - 6}" text-anchor="middle" class="vlab">${d.count} buổi</text>`;
+            if (d.count) g += `<text x="${bx + bw / 2}" y="${y(d.vol) - 6}" text-anchor="middle" class="vlab">${band < 46 ? d.count : d.count + ' buổi'}</text>`;
             g += `<text x="${bx + bw / 2}" y="${H - 6}" text-anchor="middle" class="xl ${last ? 'cur' : ''}">${fmtDM(d.ws)}</text>`;
         });
         el.innerHTML = `<svg width="${W}" height="${H}">${g}</svg>`;
@@ -354,7 +354,7 @@ const Gym = (() => {
                 wk.count >= t ? '<span class="delta good">Đã đạt mục tiêu tuần</span>' : `Còn ${t - wk.count} buổi để đạt mục tiêu`)}
             ${kpi('Chuỗi tuần', ic('flame'), 'orange', `${s}<span class="cur">tuần</span>`, s ? 'Liên tiếp đạt mục tiêu' : 'Đạt mục tiêu tuần để bắt đầu chuỗi')}
             ${kpi('Khối lượng tuần', ic('trophy'), 'green', `${fmtNum(wk.vol)}<span class="cur">kg</span>`,
-                prev.vol ? `${deltaPill(wk.vol, prev.vol, true)} so với tuần trước` : `${wk.sets} set trong tuần`)}
+                !wk.vol && prev.vol ? `Tuần trước ${fmtVol(prev.vol)}` : prev.vol ? `${deltaPill(wk.vol, prev.vol, true)} so với tuần trước` : `${wk.sets} set trong tuần`)}
             ${kpi('Cân nặng', ic('scale'), 'purple', b ? `${kg(b.weight)}<span class="cur">kg</span>` : '—',
                 b ? (b30 && b30.id !== b.id ? `${b.weight - b30.weight >= 0 ? '+' : '−'}${kg(Math.abs(b.weight - b30.weight))} kg trong 30 ngày` : agoText(b.date))
                     : '<button class="link" data-ga="body-add">Ghi cân nặng</button>')}

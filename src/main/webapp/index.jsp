@@ -3,8 +3,16 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Second Brain</title>
+    <meta name="theme-color" id="themeColor" content="#eef1f6">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Second Brain">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" type="image/png" href="assets/icons/favicon-64.png">
+    <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
     <script>document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light';</script>
     <link rel="stylesheet" href="assets/css/app.css">
 </head>
@@ -134,6 +142,14 @@
 
         <div class="side-bottom">
             <div class="goal-card" id="goalCard"></div>
+            <button class="sync-pill" data-sync="long"></button>
+            <button class="nav-item" id="devicesBtn">
+                <svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.2"/><path d="M11 17.5h2"/></svg>
+                <span id="devLabel">Kết nối điện thoại</span> <span class="count" id="devCount"></span>
+            </button>
+            <button class="nav-item" data-install hidden>
+                <svg viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></svg> Cài app lên máy
+            </button>
             <button class="nav-item" id="themeToggle">
                 <svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
                 <span id="themeLabel">Chế độ tối</span>
@@ -163,6 +179,7 @@
                 <h1 id="viewTitle">Xin chào</h1>
                 <p id="viewSub"></p>
             </div>
+            <button class="sync-pill" data-sync="short"></button>
             <div class="view-actions" id="viewActions"></div>
             <button class="ask-btn" id="openAdd">
                 <span class="ask-icon"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></span>
@@ -170,11 +187,36 @@
             </button>
         </header>
 
+        <div class="ptr" id="ptr"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/></svg></div>
         <div class="board">
             <div class="board-main" id="groups"></div>
             <aside class="board-side" id="side"></aside>
         </div>
     </main>
+
+    <!-- ===== Thanh tab (điện thoại) ===== -->
+    <div class="scrim" id="scrim"></div>
+    <nav class="tabbar" id="tabbar">
+        <button data-tab="today" data-view="today">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg>
+            <span>Hôm nay</span>
+        </button>
+        <button data-tab="f" data-view="f:overview">
+            <svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h11v4"/><rect x="4" y="7" width="16" height="12" rx="2"/><circle cx="16" cy="13" r="1"/></svg>
+            <span>Tài chính</span>
+        </button>
+        <button class="tab-add" data-open-add aria-label="Thêm">
+            <span><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+        </button>
+        <button data-tab="g" data-view="g:overview">
+            <svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>
+            <span>Tập luyện</span>
+        </button>
+        <button data-tab="menu" id="tabMenu">
+            <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+            <span>Menu</span>
+        </button>
+    </nav>
 </div>
 
 <!-- ===== Join-by-key dialog ===== -->
@@ -230,8 +272,14 @@
     <form method="dialog" id="finForm"></form>
 </dialog>
 
+<!-- ===== Kết nối thiết bị (nội dung do devices.js dựng) ===== -->
+<dialog id="devDialog" class="dialog dev-dlg"><div id="devBody"></div></dialog>
+
 <div class="toast" id="toast"></div>
 
+<script src="assets/vendor/qrcode.js"></script>
+<script src="assets/js/sync.js"></script>
+<script src="assets/js/devices.js"></script>
 <script src="assets/js/finance.js"></script>
 <script src="assets/js/gym.js"></script>
 <script src="assets/js/app.js"></script>

@@ -123,7 +123,16 @@ public final class Db {
                     + " weight DOUBLE NOT NULL,"
                     + " fat DOUBLE,"
                     + " waist DOUBLE,"
-                    + " note VARCHAR(120))"
+                    + " note VARCHAR(120))",
+            // v6: thiết bị đã ghép (điện thoại...) — cookie riêng từng máy, thu hồi được
+            "CREATE TABLE IF NOT EXISTS devices ("
+                    + " id VARCHAR(12) PRIMARY KEY,"
+                    + " token_hash CHAR(64) NOT NULL UNIQUE,"
+                    + " user_id VARCHAR(36) NOT NULL REFERENCES users(id),"
+                    + " name VARCHAR(60) NOT NULL,"
+                    + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,"
+                    + " last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS devices_user ON devices(user_id)"
     };
 
     private static JdbcConnectionPool pool;

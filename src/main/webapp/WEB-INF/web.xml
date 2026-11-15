@@ -11,6 +11,19 @@
     <param-value>jdbc:h2:~/.secondbrain/data</param-value>
   </context-param>
 
+  <!-- Địa chỉ HTTPS để điện thoại mở (VD sau khi bật Tailscale Serve cho cổng 8081):
+       https://<tên-máy>.<tailnet>.ts.net/secondBrain/ — mã QR "Kết nối thiết bị" sẽ ưu tiên địa chỉ này.
+       Có thể đặt bằng biến môi trường SB_PUBLIC_URL thay vì sửa file. -->
+  <context-param>
+    <param-name>public.url</param-name>
+    <param-value></param-value>
+  </context-param>
+
+  <mime-mapping>
+    <extension>webmanifest</extension>
+    <mime-type>application/manifest+json</mime-type>
+  </mime-mapping>
+
   <welcome-file-list>
     <welcome-file>index.jsp</welcome-file>
   </welcome-file-list>

@@ -6,9 +6,10 @@ import javax.servlet.annotation.WebServlet;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** GET /api/me — thông tin user; PUT /api/me {name} — đổi tên hiển thị. */
+/** GET /api/me — thông tin user (+ thiết bị đang dùng nếu đã ghép); PUT /api/me {name} — đổi tên hiển thị. */
 @WebServlet("/api/me")
 public class MeServlet extends ApiServlet {
 
@@ -28,12 +29,27 @@ public class MeServlet extends ApiServlet {
             } else if (!r.method.equals("GET")) {
                 throw new ApiException(405, "Phương thức không được hỗ trợ");
             }
-            try (PreparedStatement ps = c.prepareStatement("SELECT pub_id, name FROM users WHERE id = ?")) {
+            Map<String, Object> me = new LinkedHashMap<>();
+            try (PreparedStatement ps = c.prepareStatement("SELECT pub_id, name,"
+                    + " (SELECT COUNT(*) FROM devices WHERE user_id = users.id) FROM users WHERE id = ?")) {
                 ps.setString(1, r.userId);
                 ResultSet rs = ps.executeQuery();
                 rs.next();
-                return Map.of("id", rs.getString(1), "name", rs.getString(2));
+                me.put("id", rs.getString(1));
+                me.put("name", rs.getString(2));
+                me.put("devices", rs.getInt(3));
             }
+            String dev = (String) r.raw.getAttribute(Devices.DEVICE_ATTR);
+            if (dev != null) {
+                try (PreparedStatement ps = c.prepareStatement("SELECT name FROM devices WHERE id = ?")) {
+                    ps.setString(1, dev);
+                    ResultSet rs = ps.executeQuery();
+                    if (rs.next()) {
+                        me.put("device", Map.of("id", dev, "name", rs.getString(1)));
+                    }
+                }
+            }
+            return me;
         }
     }
 }
