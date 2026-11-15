@@ -50,6 +50,32 @@
             </nav>
 
             <div class="section">
+                <button class="section-head" data-collapse="finance">
+                    <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg> Tài chính
+                </button>
+                <div class="section-body" id="finance">
+                    <a class="nav-item" data-view="f:overview">
+                        <svg viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h11v4"/><rect x="4" y="7" width="16" height="12" rx="2"/><circle cx="16" cy="13" r="1"/></svg>
+                        Tổng quan
+                    </a>
+                    <a class="nav-item" data-view="f:tx">
+                        <svg viewBox="0 0 24 24"><path d="M5 8h13l-3-3M19 16H6l3 3"/></svg> Giao dịch
+                    </a>
+                    <a class="nav-item" data-view="f:sources">
+                        <svg viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="2"/><path d="M9 7V5h6v2M4 12h16"/></svg>
+                        Nguồn thu nhập <span class="count pill warn" data-fin-badge="f:sources"></span>
+                    </a>
+                    <a class="nav-item" data-view="f:forecast">
+                        <svg viewBox="0 0 24 24"><path d="M4 17l6-6 4 4 6-7"/><path d="M15 8h5v5"/></svg> Ước tính thu nhập
+                    </a>
+                    <a class="nav-item" data-view="f:goals">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".6"/></svg>
+                        Mục tiêu tài chính <span class="count pill warn" data-fin-badge="f:goals"></span>
+                    </a>
+                </div>
+            </div>
+
+            <div class="section">
                 <div class="section-row">
                     <button class="section-head" data-collapse="projects">
                         <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg> Dự án của tôi
@@ -116,7 +142,7 @@
             <div class="view-actions" id="viewActions"></div>
             <button class="ask-btn" id="openAdd">
                 <span class="ask-icon"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></span>
-                Thêm mục tiêu
+                <span id="addLabel">Thêm mục tiêu</span>
             </button>
         </header>
 
@@ -175,8 +201,14 @@
     </form>
 </dialog>
 
+<!-- ===== Dialog tài chính (nội dung do finance.js dựng) ===== -->
+<dialog id="finDialog" class="dialog fin-dlg">
+    <form method="dialog" id="finForm"></form>
+</dialog>
+
 <div class="toast" id="toast"></div>
 
+<script src="assets/js/finance.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>

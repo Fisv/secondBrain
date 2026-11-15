@@ -106,6 +106,7 @@ async function loadTasks() {
     const p = currentProject();
     const m = currentMember();
     let query;
+    if (Fin.isView(view)) return (state.tasks = []);
     if (p) query = 'view=project&projectId=' + p.id;
     else if (m) query = 'view=member&memberId=' + encodeURIComponent(m.id);
     else if (view === 'search') query = 'view=search&q=' + encodeURIComponent(state.query);
@@ -118,7 +119,7 @@ async function refresh() {
     try {
         let partners;
         [state.projects, state.counts, partners, state.stats] = await Promise.all(
-            [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence'), api('GET', 'tasks/stats')]);
+            [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence'), api('GET', 'tasks/stats'), Fin.load()]);
         applyPartners(partners);
         if ((view.startsWith('p') && !currentProject()) || (view.startsWith('u:') && !currentMember())) view = 'today';
         await loadTasks();
@@ -130,6 +131,8 @@ async function refresh() {
 
 async function go(v) {
     view = v;
+    // Giữ trang tài chính trên URL để F5 không quay về Hôm nay.
+    history.replaceState(null, '', location.pathname + location.search + (Fin.isView(v) ? '#' + v : ''));
     if (view !== 'search') {
         state.query = '';
         $('#sideSearch').value = '';
@@ -198,7 +201,10 @@ function ring(pct, color) {
 }
 
 // ---------- Render ----------
-function render() { renderSidebar(); renderHeader(); renderMain(); renderSide(); }
+function render() {
+    renderSidebar(); renderHeader(); renderMain(); renderSide();
+    if (Fin.isView(view)) Fin.afterRender();
+}
 
 function renderSidebar() {
     $('#userName').textContent = state.me?.name ?? '';
@@ -220,6 +226,8 @@ function renderSidebar() {
 
     $('[data-count="today"]').textContent = state.counts.today || '';
     $('[data-count="inbox"]').textContent = state.counts.inbox || '';
+    const fb = Fin.navBadges();
+    document.querySelectorAll('[data-fin-badge]').forEach((el) => { el.textContent = fb[el.dataset.finBadge] || ''; });
 
     const s = state.stats || {};
     const pct = s.todayTotal ? Math.round((s.todayDone / s.todayTotal) * 100) : 0;
@@ -247,6 +255,15 @@ function renderPartners() {
 }
 
 function renderHeader() {
+    if (Fin.isView(view)) {
+        const h = Fin.header();
+        $('#viewTitle').textContent = h.title;
+        $('#viewSub').textContent = h.sub;
+        $('#viewActions').innerHTML = h.actions;
+        $('#addLabel').textContent = h.add;
+        return;
+    }
+    $('#addLabel').textContent = 'Thêm mục tiêu';
     const titles = { inbox: 'Hộp thư', upcoming: 'Sắp tới', labels: 'Bộ lọc & Nhãn', search: 'Tìm kiếm' };
     const p = currentProject();
     const m = currentMember();
@@ -332,7 +349,9 @@ function renderMain() {
     const p = currentProject();
     const m = currentMember();
 
-    if (view === 'today') {
+    if (Fin.isView(view)) {
+        g.innerHTML = Fin.main();
+    } else if (view === 'today') {
         g.innerHTML = todayHtml();
     } else if (view === 'search') {
         g.innerHTML = !state.query
@@ -479,6 +498,7 @@ function heroArt() {
 
 // ----- Cột phải -----
 function renderSide() {
+    if (Fin.isView(view)) return ($('#side').innerHTML = Fin.side());
     const s = state.stats || {};
     const online = state.partners.filter((p) => p.online);
     const partnersCard = state.partners.length
@@ -624,6 +644,7 @@ function openAddForm(btn) {
 }
 
 async function openAddAnywhere() {
+    if (Fin.isView(view)) return Fin.addAction();
     if (!['today', 'inbox', 'upcoming'].includes(view) && !currentProject()) await go('today');
     const btn = $('.add-task');
     if (btn) openAddForm(btn);
@@ -819,7 +840,8 @@ setupDialog(inviteDialog, async () => {
 
 // Đồng bộ mục tiêu của người cùng key mỗi 10 giây (bỏ qua khi đang nhập).
 setInterval(() => {
-    if (!document.hidden && !document.querySelector('.inline-form, dialog[open]') && view !== 'search') refresh();
+    const typing = document.activeElement?.closest?.('#groups, #side') && document.activeElement.matches('input, select');
+    if (!document.hidden && !typing && !document.querySelector('.inline-form, dialog[open]') && view !== 'search') refresh();
 }, 10000);
 
 // Heartbeat để người khác thấy mình online; chạy cả khi đang nhập.
@@ -829,6 +851,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) refr
 window.addEventListener('pagehide', () => navigator.sendBeacon('api/presence/offline'));
 
 (async () => {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    if (Fin.isView(hash)) view = hash;
     try {
         state.me = await api('GET', 'me');
     } catch (e) {

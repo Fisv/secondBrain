@@ -44,7 +44,55 @@ public final class Db {
             "CREATE UNIQUE INDEX IF NOT EXISTS users_pub_id ON users(pub_id)",
             // v3: thời điểm hoàn thành — dùng cho thống kê tuần, chuỗi ngày và hoạt động gần đây
             "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS done_at TIMESTAMP",
-            "UPDATE tasks SET done_at = created_at WHERE done AND done_at IS NULL"
+            "UPDATE tasks SET done_at = created_at WHERE done AND done_at IS NULL",
+            // v4: tài chính cá nhân — mỗi người một sổ riêng
+            "CREATE TABLE IF NOT EXISTS fin_settings ("
+                    + " user_id VARCHAR(36) PRIMARY KEY REFERENCES users(id),"
+                    + " opening BIGINT DEFAULT 0 NOT NULL,"
+                    + " budget BIGINT DEFAULT 0 NOT NULL,"
+                    + " cat_budgets VARCHAR(4000) DEFAULT '{}' NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS fin_sources ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " owner_id VARCHAR(36) NOT NULL REFERENCES users(id),"
+                    + " name VARCHAR(60) NOT NULL,"
+                    + " cat VARCHAR(30) NOT NULL,"
+                    + " freq VARCHAR(10) NOT NULL,"
+                    + " amount BIGINT NOT NULL,"
+                    + " pay_day INT,"
+                    + " from_month CHAR(7) NOT NULL,"
+                    + " to_month CHAR(7),"
+                    + " note VARCHAR(120))",
+            "CREATE TABLE IF NOT EXISTS fin_tx ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " owner_id VARCHAR(36) NOT NULL REFERENCES users(id),"
+                    + " type VARCHAR(3) NOT NULL,"
+                    + " amount BIGINT NOT NULL,"
+                    + " cat VARCHAR(30) NOT NULL,"
+                    + " tx_date DATE NOT NULL,"
+                    + " note VARCHAR(160),"
+                    + " source_id BIGINT REFERENCES fin_sources(id) ON DELETE SET NULL,"
+                    + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+            "CREATE INDEX IF NOT EXISTS fin_tx_owner ON fin_tx(owner_id, tx_date)",
+            "CREATE TABLE IF NOT EXISTS fin_goals ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " owner_id VARCHAR(36) NOT NULL REFERENCES users(id),"
+                    + " name VARCHAR(60) NOT NULL,"
+                    + " kind VARCHAR(10) NOT NULL,"
+                    + " target BIGINT NOT NULL,"
+                    + " deadline CHAR(7),"
+                    + " scope VARCHAR(5) DEFAULT 'month' NOT NULL,"
+                    + " from_month CHAR(7),"
+                    + " color INT DEFAULT 0 NOT NULL,"
+                    + " icon VARCHAR(20) DEFAULT 'target' NOT NULL,"
+                    + " note VARCHAR(120),"
+                    + " created DATE DEFAULT CURRENT_DATE NOT NULL,"
+                    + " done_date DATE)",
+            "CREATE TABLE IF NOT EXISTS fin_goal_tx ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " goal_id BIGINT NOT NULL REFERENCES fin_goals(id) ON DELETE CASCADE,"
+                    + " amount BIGINT NOT NULL,"
+                    + " tx_date DATE NOT NULL,"
+                    + " note VARCHAR(80))"
     };
 
     private static JdbcConnectionPool pool;
