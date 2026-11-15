@@ -16,6 +16,10 @@ const state = { me: null, projects: [], partners: [], tasks: [], counts: {}, sta
 let view = 'today';
 
 const $ = (s) => document.querySelector(s);
+// Các phân hệ cắm thêm (Tài chính, Tập luyện) — cùng một giao diện: isView/load/header/main/side/...
+const MODS = [Fin, Gym];
+const modOf = (v) => MODS.find((m) => m.isView(v));
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const initial = (name) => (name || '?').trim().charAt(0).toUpperCase();
@@ -106,7 +110,7 @@ async function loadTasks() {
     const p = currentProject();
     const m = currentMember();
     let query;
-    if (Fin.isView(view)) return (state.tasks = []);
+    if (modOf(view)) return (state.tasks = []);
     if (p) query = 'view=project&projectId=' + p.id;
     else if (m) query = 'view=member&memberId=' + encodeURIComponent(m.id);
     else if (view === 'search') query = 'view=search&q=' + encodeURIComponent(state.query);
@@ -119,7 +123,7 @@ async function refresh() {
     try {
         let partners;
         [state.projects, state.counts, partners, state.stats] = await Promise.all(
-            [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence'), api('GET', 'tasks/stats'), Fin.load()]);
+            [api('GET', 'projects'), api('GET', 'tasks/counts'), api('GET', 'presence'), api('GET', 'tasks/stats'), ...MODS.map((m) => m.load())]);
         applyPartners(partners);
         if ((view.startsWith('p') && !currentProject()) || (view.startsWith('u:') && !currentMember())) view = 'today';
         await loadTasks();
@@ -132,7 +136,7 @@ async function refresh() {
 async function go(v) {
     view = v;
     // Giữ trang tài chính trên URL để F5 không quay về Hôm nay.
-    history.replaceState(null, '', location.pathname + location.search + (Fin.isView(v) ? '#' + v : ''));
+    history.replaceState(null, '', location.pathname + location.search + (modOf(v) ? '#' + v : ''));
     if (view !== 'search') {
         state.query = '';
         $('#sideSearch').value = '';
@@ -203,7 +207,7 @@ function ring(pct, color) {
 // ---------- Render ----------
 function render() {
     renderSidebar(); renderHeader(); renderMain(); renderSide();
-    if (Fin.isView(view)) Fin.afterRender();
+    modOf(view)?.afterRender();
 }
 
 function renderSidebar() {
@@ -226,7 +230,7 @@ function renderSidebar() {
 
     $('[data-count="today"]').textContent = state.counts.today || '';
     $('[data-count="inbox"]').textContent = state.counts.inbox || '';
-    const fb = Fin.navBadges();
+    const fb = Object.assign({}, ...MODS.map((m) => m.navBadges()));
     document.querySelectorAll('[data-fin-badge]').forEach((el) => { el.textContent = fb[el.dataset.finBadge] || ''; });
 
     const s = state.stats || {};
@@ -255,8 +259,8 @@ function renderPartners() {
 }
 
 function renderHeader() {
-    if (Fin.isView(view)) {
-        const h = Fin.header();
+    if (modOf(view)) {
+        const h = modOf(view).header();
         $('#viewTitle').textContent = h.title;
         $('#viewSub').textContent = h.sub;
         $('#viewActions').innerHTML = h.actions;
@@ -349,8 +353,8 @@ function renderMain() {
     const p = currentProject();
     const m = currentMember();
 
-    if (Fin.isView(view)) {
-        g.innerHTML = Fin.main();
+    if (modOf(view)) {
+        g.innerHTML = modOf(view).main();
     } else if (view === 'today') {
         g.innerHTML = todayHtml();
     } else if (view === 'search') {
@@ -498,7 +502,7 @@ function heroArt() {
 
 // ----- Cột phải -----
 function renderSide() {
-    if (Fin.isView(view)) return ($('#side').innerHTML = Fin.side());
+    if (modOf(view)) return ($('#side').innerHTML = modOf(view).side());
     const s = state.stats || {};
     const online = state.partners.filter((p) => p.online);
     const partnersCard = state.partners.length
@@ -644,7 +648,7 @@ function openAddForm(btn) {
 }
 
 async function openAddAnywhere() {
-    if (Fin.isView(view)) return Fin.addAction();
+    if (modOf(view)) return modOf(view).addAction();
     if (!['today', 'inbox', 'upcoming'].includes(view) && !currentProject()) await go('today');
     const btn = $('.add-task');
     if (btn) openAddForm(btn);
@@ -852,7 +856,7 @@ window.addEventListener('pagehide', () => navigator.sendBeacon('api/presence/off
 
 (async () => {
     const hash = decodeURIComponent(location.hash.slice(1));
-    if (Fin.isView(hash)) view = hash;
+    if (modOf(hash)) view = hash;
     try {
         state.me = await api('GET', 'me');
     } catch (e) {

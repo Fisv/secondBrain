@@ -76,6 +76,30 @@
             </div>
 
             <div class="section">
+                <button class="section-head" data-collapse="gym">
+                    <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg> Tập luyện
+                </button>
+                <div class="section-body" id="gym">
+                    <a class="nav-item" data-view="g:overview">
+                        <svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>
+                        Tổng quan <span class="count" data-fin-badge="g:overview"></span>
+                    </a>
+                    <a class="nav-item" data-view="g:log">
+                        <svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>
+                        Nhật ký tập
+                    </a>
+                    <a class="nav-item" data-view="g:ex">
+                        <svg viewBox="0 0 24 24"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7M10 17h4v3h-4z"/></svg>
+                        Bài tập &amp; kỷ lục
+                    </a>
+                    <a class="nav-item" data-view="g:body">
+                        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 9.5a5 5 0 0 1 7 0L12 12z"/></svg>
+                        Chỉ số cơ thể
+                    </a>
+                </div>
+            </div>
+
+            <div class="section">
                 <div class="section-row">
                     <button class="section-head" data-collapse="projects">
                         <svg class="chev" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg> Dự án của tôi
@@ -209,6 +233,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="assets/js/finance.js"></script>
+<script src="assets/js/gym.js"></script>
 <script src="assets/js/app.js"></script>
 </body>
 </html>

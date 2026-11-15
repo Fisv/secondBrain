@@ -92,7 +92,38 @@ public final class Db {
                     + " goal_id BIGINT NOT NULL REFERENCES fin_goals(id) ON DELETE CASCADE,"
                     + " amount BIGINT NOT NULL,"
                     + " tx_date DATE NOT NULL,"
-                    + " note VARCHAR(80))"
+                    + " note VARCHAR(80))",
+            // v5: nhật ký tập gym — mỗi người một sổ riêng
+            "CREATE TABLE IF NOT EXISTS gym_settings ("
+                    + " user_id VARCHAR(36) PRIMARY KEY REFERENCES users(id),"
+                    + " week_target INT DEFAULT 3 NOT NULL,"
+                    + " height_cm DOUBLE,"
+                    + " target_weight DOUBLE)",
+            "CREATE TABLE IF NOT EXISTS gym_workouts ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " owner_id VARCHAR(36) NOT NULL REFERENCES users(id),"
+                    + " w_date DATE NOT NULL,"
+                    + " title VARCHAR(60) NOT NULL,"
+                    + " duration_min INT,"
+                    + " note VARCHAR(200),"
+                    + " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+            "CREATE INDEX IF NOT EXISTS gym_workouts_owner ON gym_workouts(owner_id, w_date)",
+            "CREATE TABLE IF NOT EXISTS gym_sets ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " workout_id BIGINT NOT NULL REFERENCES gym_workouts(id) ON DELETE CASCADE,"
+                    + " pos INT NOT NULL,"
+                    + " exercise VARCHAR(60) NOT NULL,"
+                    + " muscle VARCHAR(20) NOT NULL,"
+                    + " reps INT NOT NULL,"
+                    + " weight DOUBLE DEFAULT 0 NOT NULL)",
+            "CREATE TABLE IF NOT EXISTS gym_body ("
+                    + " id BIGINT AUTO_INCREMENT PRIMARY KEY,"
+                    + " owner_id VARCHAR(36) NOT NULL REFERENCES users(id),"
+                    + " m_date DATE NOT NULL,"
+                    + " weight DOUBLE NOT NULL,"
+                    + " fat DOUBLE,"
+                    + " waist DOUBLE,"
+                    + " note VARCHAR(120))"
     };
 
     private static JdbcConnectionPool pool;
