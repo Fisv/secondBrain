@@ -17,6 +17,17 @@
     <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>
+<!-- Hoạ tiết dùng chung cho biểu đồ (giao diện tối: cột kẻ sọc, cột nổi bật gradient) -->
+<svg class="chart-defs" aria-hidden="true" width="0" height="0">
+    <defs>
+        <pattern id="hatch" patternUnits="userSpaceOnUse" width="7" height="7" patternTransform="rotate(45)">
+            <rect width="7" height="7" fill="#1e1e22"/><line x1="0" y1="0" x2="0" y2="7" stroke="#2b2b31" stroke-width="3"/>
+        </pattern>
+        <linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8db4ff"/><stop offset="1" stop-color="#3b6cff"/></linearGradient>
+        <linearGradient id="gGreen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7ef0a8"/><stop offset="1" stop-color="#1fae5c"/></linearGradient>
+        <linearGradient id="gOrange" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffbe86"/><stop offset="1" stop-color="#f2711c"/></linearGradient>
+    </defs>
+</svg>
 <div class="app" id="app">
 
     <!-- ===== Sidebar ===== -->

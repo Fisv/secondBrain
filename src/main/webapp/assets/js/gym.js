@@ -230,10 +230,11 @@ const Gym = (() => {
         const mag = Math.pow(10, Math.floor(Math.log10(raw))), r = raw / mag;
         return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * mag;
     }
-    function barPath(x, y, w, h, fill, title) {
+    function barPath(x, y, w, h, fill, title, cls = '') {
         if (h < 0.5) return '';
-        const r = Math.min(4, w / 2, h);
-        return `<path class="bar" d="M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z" fill="${fill}"><title>${title}</title></path>`;
+        const r = Math.min(cls ? 7 : 4, w / 2, h);
+        const cap = cls && h > 10 ? `<rect class="cap ${cls}" x="${x + 3}" y="${y + 3}" width="${Math.max(0, w - 6)}" height="3" rx="1.5"/>` : '';
+        return `<path class="bar ${cls}" d="M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z" fill="${fill}"><title>${title}</title></path>${cap}`;
     }
     function drawVolume() {
         const el = document.getElementById('gVol');
@@ -250,7 +251,7 @@ const Gym = (() => {
         }
         data.forEach((d, i) => {
             const bx = ml + band * i + (band - bw) / 2, last = i === data.length - 1;
-            g += barPath(bx, y(d.vol), bw, y(0) - y(d.vol), last ? 'var(--accent)' : 'var(--c5)', `Tuần ${fmtDM(d.ws)} · ${d.count} buổi · ${fmtVol(d.vol)}`);
+            g += barPath(bx, y(d.vol), bw, y(0) - y(d.vol), last ? 'var(--accent)' : 'var(--c5)', `Tuần ${fmtDM(d.ws)} · ${d.count} buổi · ${fmtVol(d.vol)}`, last ? 'hl' : 'past');
             if (d.count) g += `<text x="${bx + bw / 2}" y="${y(d.vol) - 6}" text-anchor="middle" class="vlab">${band < 46 ? d.count : d.count + ' buổi'}</text>`;
             g += `<text x="${bx + bw / 2}" y="${H - 6}" text-anchor="middle" class="xl ${last ? 'cur' : ''}">${fmtDM(d.ws)}</text>`;
         });

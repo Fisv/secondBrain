@@ -307,10 +307,12 @@ const Fin = (() => {
         const step = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * mag;
         return { step, top: Math.ceil(max / step) * step };
     }
-    function barPath(x, y, w, h, fill, title) {
+    /** Cột bo góc. cls: 'in'/'out' + 'cur'/'past' để giao diện tối tô sọc / gradient và vẽ nắp. */
+    function barPath(x, y, w, h, fill, title, cls = '') {
         if (h < 0.5) return '';
-        const r = Math.min(4, w / 2, h);
-        return `<path class="bar" d="M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z" fill="${fill}">${title ? `<title>${title}</title>` : ''}</path>`;
+        const r = Math.min(cls ? 6 : 4, w / 2, h);
+        const cap = cls && h > 10 ? `<rect class="cap ${cls}" x="${x + 2.5}" y="${y + 3}" width="${Math.max(0, w - 5)}" height="3" rx="1.5"/>` : '';
+        return `<path class="bar ${cls}" d="M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z" fill="${fill}">${title ? `<title>${title}</title>` : ''}</path>${cap}`;
     }
     function grid(W, ml, mr, y, step, top) {
         let g = '';
@@ -332,8 +334,9 @@ const Fin = (() => {
         let bars = '', labels = '';
         data.forEach((d, i) => {
             const bx = ml + band * i + (band - bw * 2 - 3) / 2, b = y(0);
-            bars += barPath(bx, y(d.inc), bw, b - y(d.inc), 'var(--green)', `${monthLabel(d.k)} · Thu ${fmt(d.inc)}`)
-                + barPath(bx + bw + 3, y(d.out), bw, b - y(d.out), 'var(--orange)', `${monthLabel(d.k)} · Chi ${fmt(d.out)}`);
+            const when = i === 5 ? 'cur' : 'past';
+            bars += barPath(bx, y(d.inc), bw, b - y(d.inc), 'var(--green)', `${monthLabel(d.k)} · Thu ${fmt(d.inc)}`, 'in ' + when)
+                + barPath(bx + bw + 3, y(d.out), bw, b - y(d.out), 'var(--orange)', `${monthLabel(d.k)} · Chi ${fmt(d.out)}`, 'out ' + when);
             labels += `<text x="${ml + band * i + band / 2}" y="${H - 6}" text-anchor="middle" class="xl ${i === 5 ? 'cur' : ''}">${monthTick(d.k)}</text>`;
         });
         el.innerHTML = `<svg width="${W}" height="${H}">${grid(W, ml, mr, y, step, top)}${bars}${labels}</svg>`;
@@ -419,7 +422,44 @@ const Fin = (() => {
                 : emptyBox('Chưa có giao dịch', `Ghi khoản thu chi đầu tiên của ${monthLabel(k).toLowerCase()}.`,
                     `<button class="primary-btn" data-fa="tx-add">${ICON.plus}Thêm giao dịch</button>`),
             `<button class="link-btn" data-view="f:tx">Tất cả ${ICON.arrow}</button>`);
-        return kpis + flow + recentCard;
+        return kpis + flow + spendCard(m) + recentCard;
+    }
+
+    // ---------- Cơ cấu chi tiêu (biểu đồ tròn) ----------
+    const catColor = (c) => `hsl(${c.hue} 72% 58%)`;
+    function donutSvg(segs, total, center, sub, size = 190) {
+        const sw = 22, r = (size - sw) / 2 - 4, C = 2 * Math.PI * r, gap = segs.length > 1 ? 6 : 0;
+        let off = 0, arcs = '';
+        for (const s of segs) {
+            const len = (s.v / total) * C;
+            const dash = Math.max(0.01, len - gap);
+            arcs += `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-linecap="round"
+                stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}" stroke-dashoffset="${(-off - gap / 2).toFixed(2)}"
+                transform="rotate(-90 ${size / 2} ${size / 2})" class="seg-arc"><title>${s.title}</title></circle>`;
+            off += len;
+        }
+        return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+            <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--hover)" stroke-width="${sw}"/>${arcs}
+            <text x="50%" y="47%" text-anchor="middle" class="d-val">${center}</text>
+            <text x="50%" y="60%" text-anchor="middle" class="d-sub">${sub}</text></svg>`;
+    }
+    function spendCard(m) {
+        const rows = Object.entries(m.by).sort((a, b) => b[1] - a[1]);
+        if (!m.out) return '';
+        const top = rows.slice(0, 5), rest = rows.slice(5).reduce((a, r) => a + r[1], 0);
+        const segs = top.map(([id, v]) => ({ id, v, color: catColor(cat(id)), name: cat(id).name }));
+        if (rest) segs.push({ id: 'rest', v: rest, color: 'var(--bar-idle)', name: 'Khác' });
+        segs.forEach((s) => { s.title = `${s.name}: ${fmt(s.v)} (${Math.round((s.v / m.out) * 100)}%)`; });
+        const legend = segs.map((s) => `<div class="dl-row"><i style="background:${s.color}"></i><span class="ellipsis">${esc(s.name)}</span>
+            <b>${fmtCompact(s.v)}</b><small>${Math.round((s.v / m.out) * 100)}%</small></div>`).join('');
+        const big = segs.slice(0, 2).map((s) => `<b>${esc(s.name)}</b>`).join(' và ');
+        const share = Math.round(((segs[0].v + (segs[1]?.v || 0)) / m.out) * 100);
+        return card('Cơ cấu chi tiêu', monthLabel(ui.month), `<div class="spend">
+            ${donutSvg(segs, m.out, fmtCompact(m.out), 'Tổng chi')}
+            <div class="dl">${legend}</div></div>
+            <p class="hint spend-note">${ICON.bolt}<span>${segs.length > 1 ? `${share}% chi tiêu đến từ ${big}.` : `Toàn bộ chi tiêu là ${big}.`}
+            ${D.settings.budget ? ` Đã dùng ${Math.round((m.out / D.settings.budget) * 100)}% ngân sách tháng.` : ''}</span></p>`,
+            `<button class="link-btn" data-view="f:tx">Chi tiết ${ICON.arrow}</button>`);
     }
 
     function budgetCard() {
